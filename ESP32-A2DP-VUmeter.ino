@@ -16,7 +16,7 @@ Output example 1kHz 0dB signal
 Ex1. 0dB 1kHz input 
 
 VU meter by ESP32-A2DP
-Device: BtMusic
+Device: MyMusic
 
 a2dp audio_cfg_cb , codec type 0
 configure audio player 21-15-2-35
@@ -74,8 +74,6 @@ bool isFirst = true;
 long elapsed = 0;
 void data_stream_reader_callback(const uint8_t *data, uint32_t len) {
   //Serial.printf("Data packet received %d\r\n", len);
-  uint32_t soundLevel = 0;
-  //printf("%d\r\n", len);
   int16_t minRight = 0;
   int16_t maxRight = 0;
   int16_t minLeft = 0;
@@ -87,9 +85,9 @@ void data_stream_reader_callback(const uint8_t *data, uint32_t len) {
     int16_t rightData = data[i] | data[i + 1] << 8;
     int16_t leftData = data[i + 2] | data[i + 3] << 8;
 
-    if (minRight < rightData) minRight = rightData;
+  //  if (minRight < rightData) minRight = rightData;
     if (maxRight > rightData) maxRight = rightData;
-    if (minLeft < leftData) minLeft = leftData;
+  //  if (minLeft < leftData) minLeft = leftData;
     if (maxLeft > leftData) maxLeft = leftData;
     i = i + 4;
   }
