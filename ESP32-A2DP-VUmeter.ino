@@ -70,41 +70,45 @@ BluetoothA2DPSink a2dp_sink;
 #define VUMETER
 #define INTERVAL 100 //VUmeter update interval
 #ifdef VUMETER
+#define PIN 2
+#define PWMCH 0
+#define SHIFTSIZE 10
 bool isFirst = true;
 long elapsed = 0;
 void data_stream_reader_callback(const uint8_t *data, uint32_t len) {
   //Serial.printf("Data packet received %d\r\n", len);
-  int16_t minRight = 0;
+//  int16_t minRight = 0;
   int16_t maxRight = 0;
-  int16_t minLeft = 0;
+//  int16_t minLeft = 0;
   int16_t maxLeft = 0;
   if (millis() - elapsed < INTERVAL) {
     return;
   }
   for (int i = 0; i < len;) {
-    int16_t rightData = data[i] | data[i + 1] << 8;
-    int16_t leftData = data[i + 2] | data[i + 3] << 8;
+    int16_t leftData = data[i] | data[i + 1] << 8;
+    int16_t rightData = data[i + 2] | data[i + 3] << 8;
 
   //  if (minRight < rightData) minRight = rightData;
-    if (maxRight > rightData) maxRight = rightData;
+    if (maxRight < rightData) maxRight = rightData;
   //  if (minLeft < leftData) minLeft = leftData;
-    if (maxLeft > leftData) maxLeft = leftData;
+    if (maxLeft < leftData) maxLeft = leftData;
     i = i + 4;
   }
   if (maxRight < 0) maxRight = -1 * maxRight;
   if (maxLeft < 0) maxLeft = -1 * maxLeft;
-#define SHIFTSIZE 10
+
   if (isFirst == true) {
     Serial.println();
     isFirst = false;
   }
   Serial.print("Left ");
-  printVUmeter(maxRight >> SHIFTSIZE);  //devide by 1024, reducing max 32768 to 32
-  Serial.print(" Right ");
   printVUmeter(maxLeft >> SHIFTSIZE);  //devide by 1024, reducing max 32768 to 32
+  Serial.print(" Right ");
+  printVUmeter(maxRight >> SHIFTSIZE);  //devide by 1024, reducing max 32768 to 32
   Serial.printf("\r");
 
   elapsed = millis();
+
 }
 void printVUmeter(uint8_t val) {
 #define BARLENGTH (0x7fff >> SHIFTSIZE)  // should be less than 32
@@ -120,6 +124,7 @@ void printVUmeter(uint8_t val) {
   bar[i] = 0x00;
 
   Serial.printf("%s", bar);  //for teraterm serial monitor
+  ledcWrite(PWMCH, val<<4);  //VU LED at GPIO PIN 
 }
 #endif
 void setup() {
@@ -128,9 +133,20 @@ void setup() {
   a2dp_sink.set_i2s_config(i2s_config);
   a2dp_sink.start("MyMusic");
 #ifdef VUMETER
+  a2dp_sink.set_stream_reader(data_stream_reader_callback);
   Serial.printf("\r\nVU meter by ESP32-A2DP\r\n");
   Serial.printf("Device: MyMusic\r\n");
-  a2dp_sink.set_stream_reader(data_stream_reader_callback);
+  Serial.printf("VU Bar length = %d\r\n", BARLENGTH);
+  // setup LED VU meter at GPIO PIN
+  pinMode(PIN, OUTPUT);
+  ledcSetup(PWMCH, 12000, 8);//PWM at 12kHz
+  ledcAttachPin(PIN, PWMCH);
+  Serial.printf("VU LED at GPIO=%d\r\n",PIN);
+  Serial.print("Left ");
+  printVUmeter(BARLENGTH);  //devide by 1024, reducing max 32768 to 32
+  Serial.print(" Right ");
+  printVUmeter(BARLENGTH);  //devide by 1024, reducing max 32768 to 32
+  Serial.printf("\r\n");
   Serial.println();
 #endif
 }
