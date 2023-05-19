@@ -68,11 +68,16 @@ i2s_pin_config_t pin_config = {
 };
 BluetoothA2DPSink a2dp_sink;
 #define VUMETER
-#define INTERVAL 100 //VUmeter update interval
 #ifdef VUMETER
-#define PIN 2
-#define PWMCH 0
+#define INTERVAL 100 //VUmeter update interval
+
 #define SHIFTSIZE 10
+#define L_PIN 2
+#define L_PWMCH 1
+
+#define R_PIN 4
+#define R_PWMCH 0
+
 bool isFirst = true;
 long elapsed = 0;
 void data_stream_reader_callback(const uint8_t *data, uint32_t len) {
@@ -102,9 +107,14 @@ void data_stream_reader_callback(const uint8_t *data, uint32_t len) {
     isFirst = false;
   }
   Serial.print("Left ");
-  printVUmeter(maxLeft >> SHIFTSIZE);  //devide by 1024, reducing max 32768 to 32
+  uint8_t val; 
+  val= maxLeft >> SHIFTSIZE;
+  printVUmeter(val);  //devide by 1024, reducing max 32768 to 32
+  ledcWrite(L_PWMCH, val<<4);  //VU LED at GPIO PIN 
   Serial.print(" Right ");
-  printVUmeter(maxRight >> SHIFTSIZE);  //devide by 1024, reducing max 32768 to 32
+  val= maxRight >> SHIFTSIZE;
+  printVUmeter(val);  //devide by 1024, reducing max 32768 to 32
+  ledcWrite(R_PWMCH, val<<4);  //VU LED at GPIO PIN 
   Serial.printf("\r");
 
   elapsed = millis();
@@ -124,7 +134,7 @@ void printVUmeter(uint8_t val) {
   bar[i] = 0x00;
 
   Serial.printf("%s", bar);  //for teraterm serial monitor
-  ledcWrite(PWMCH, val<<4);  //VU LED at GPIO PIN 
+  
 }
 #endif
 void setup() {
@@ -138,10 +148,15 @@ void setup() {
   Serial.printf("Device: MyMusic\r\n");
   Serial.printf("VU Bar length = %d\r\n", BARLENGTH);
   // setup LED VU meter at GPIO PIN
-  pinMode(PIN, OUTPUT);
-  ledcSetup(PWMCH, 12000, 8);//PWM at 12kHz
-  ledcAttachPin(PIN, PWMCH);
-  Serial.printf("VU LED at GPIO=%d\r\n",PIN);
+  pinMode(R_PIN, OUTPUT);
+  ledcSetup(R_PWMCH, 12000, 8);//PWM at 12kHz
+  ledcAttachPin(R_PIN, R_PWMCH);
+
+  pinMode(L_PIN, OUTPUT);
+  ledcSetup(L_PWMCH, 12000, 8);//PWM at 12kHz
+  ledcAttachPin(L_PIN, L_PWMCH);
+
+  Serial.printf("VU LED at GPIO=%d,%d\r\n",L_PIN,R_PIN);
   Serial.print("Left ");
   printVUmeter(BARLENGTH);  //devide by 1024, reducing max 32768 to 32
   Serial.print(" Right ");
