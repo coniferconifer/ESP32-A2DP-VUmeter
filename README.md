@@ -13,6 +13,8 @@ by printing VU bar and CR at the end.
 See #define VUMETER and #ifdef VUMETER section.
 Max volume for BT audio output seems the best for ESP32-A2DP-VUmeter.
 
+GPIO2 (Left) and GPIO4 (Right) can be used for VU LEDs , each pull donwned by appropriate current limiting resisters.
+
 Output example 
 <pre>
 Ex. 
