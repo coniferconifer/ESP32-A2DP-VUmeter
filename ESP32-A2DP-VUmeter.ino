@@ -69,7 +69,7 @@ i2s_pin_config_t pin_config = {
 BluetoothA2DPSink a2dp_sink;
 #define VUMETER
 #ifdef VUMETER
-#define INTERVAL 50 //VUmeter update interval
+#define INTERVAL 50  //VUmeter update interval
 
 #define SHIFTSIZE 10
 #define L_PIN 2
@@ -79,14 +79,37 @@ BluetoothA2DPSink a2dp_sink;
 #define R_PWMCH 0
 #define LED_OFFSET 10
 
-uint32_t counter=0;
+// https://www.firstpr.com.au/dsp/pink-noise/#Filtering
+double pinkNoise(double max) {
+  static double b0, b1, b2, b3, b4, b5, b6;
+  double white = (double)esp_random() / 4294967296.0;
+  float rate=0.5;
+  b0 = rate * b0 + white * (1.0 - rate);
+  //  b0 = 0.99765 * b0 + white * 0.0990460;
+  //  b1 = 0.96300 * b1 + white * 0.2965164;
+  //  b2 = 0.57000 * b2 + white * 1.0526913;
+  double pink = b0 * max;
+  // Serial.println(pink);
+  /*   b0 = 0.99886 * b0 + white * 0.0555179;
+    b1 = 0.99332 * b1 + white * 0.0750759;
+    b2 = 0.96900 * b2 + white * 0.1538520;
+    b3 = 0.86650 * b3 + white * 0.3104856;
+    b4 = 0.55000 * b4 + white * 0.5329522;
+    b5 = -0.7616 * b5 - white * 0.0168980;
+    double pink = (b0 + b1 + b2 + b3 + b4 + b5 + b6 + white * 0.5362) * max / 6.0;
+    b6 = white * 0.115926;
+    */
+  return pink;
+}
+
+uint32_t counter = 0;
 // uint8_t max limitter with input*multiplier+offset
 uint8_t limit(uint8_t input, uint8_t multiplier, uint8_t offset) {
-    uint16_t result = input * multiplier + offset;
-    if (result > UINT8_MAX) {
-        return UINT8_MAX;
-    }
-    return static_cast<uint8_t>(result);
+  uint16_t result = input * multiplier + offset;
+  if (result > UINT8_MAX) {
+    return UINT8_MAX;
+  }
+  return static_cast<uint8_t>(result);
 }
 
 
@@ -95,10 +118,10 @@ long elapsed = 0;
 // callbacked every 120msec by from oscilloscope observation
 void data_stream_reader_callback(const uint8_t *data, uint32_t len) {
   //Serial.printf("Data packet received %d\r\n", len);
-//  int16_t minRight = 0;
+  //  int16_t minRight = 0;
   counter++;
   int16_t maxRight = 0;
-//  int16_t minLeft = 0;
+  //  int16_t minLeft = 0;
   int16_t maxLeft = 0;
   if (millis() - elapsed < INTERVAL) {
     return;
@@ -107,9 +130,9 @@ void data_stream_reader_callback(const uint8_t *data, uint32_t len) {
     int16_t leftData = data[i] | data[i + 1] << 8;
     int16_t rightData = data[i + 2] | data[i + 3] << 8;
 
-  //  if (minRight < rightData) minRight = rightData;
+    //  if (minRight < rightData) minRight = rightData;
     if (maxRight < rightData) maxRight = rightData;
-  //  if (minLeft < leftData) minLeft = leftData;
+    //  if (minLeft < leftData) minLeft = leftData;
     if (maxLeft < leftData) maxLeft = leftData;
     i = i + 4;
   }
@@ -121,29 +144,32 @@ void data_stream_reader_callback(const uint8_t *data, uint32_t len) {
     isFirst = false;
   }
 
-  uint8_t val; 
+  uint8_t val;
   uint8_t led_offset;
-  led_offset=(uint8_t)(random(0,LED_OFFSET));
-//  Serial.printf("\r\n%d ",led_offset);
-//  led_offset=(uint8_t)pinkNoise(LED_OFFSET);
-//  Serial.printf("\r\n%d ",led_offset);
-  Serial.printf("\r\n%d %d ",elapsed,len);
+  //  led_offset=(uint8_t)(random(0,LED_OFFSET));
+  //  Serial.printf("\r\n%d ",led_offset);
+  
+  led_offset = (uint32_t)pinkNoise(LED_OFFSET);
+ // Serial.printf("\r\n%d ", led_offset);
+
+ // Serial.printf("\r\n%d %d ", elapsed, len);
   Serial.print("Left ");
-  val= maxLeft >> SHIFTSIZE;
-  printVUmeter(val);  //devide by 1024, reducing max 32768 to 32
-  val=limit(val,8,led_offset); //Red LED
-  ledcWrite(L_PWMCH, val);  //VU LED at GPIO PIN 
+  val = maxLeft >> SHIFTSIZE;
+  printVUmeter(val);                //devide by 1024, reducing max 32768 to 32
+
+  val = limit(val, 8, led_offset);  //Red LED
+  ledcWrite(L_PWMCH, val);          //VU LED at GPIO PIN
+
   Serial.print(" Right ");
- 
-  val= maxRight >> SHIFTSIZE;
-  printVUmeter(val);  //devide by 1024, reducing max 32768 to 32
-  val=limit(val,14,led_offset); //yellow LED
-  ledcWrite(R_PWMCH, val);  //VU LED at GPIO PIN 
+  val = maxRight >> SHIFTSIZE;
+  printVUmeter(val);                 //devide by 1024, reducing max 32768 to 32
+
+  val = limit(val, 14, led_offset);  //yellow LED
+  ledcWrite(R_PWMCH, val);           //VU LED at GPIO PIN
 
   Serial.printf("\r");
 
   elapsed = millis();
-
 }
 
 
@@ -163,7 +189,6 @@ void printVUmeter(uint8_t val) {
   bar[i] = 0x00;
 
   Serial.printf("%s", bar);  //for teraterm serial monitor
-  
 }
 #endif
 void setup() {
@@ -178,14 +203,14 @@ void setup() {
   Serial.printf("VU Bar length = %d\r\n", BARLENGTH);
   // setup LED VU meter at GPIO PIN
   pinMode(R_PIN, OUTPUT);
-  ledcSetup(R_PWMCH, 12000, 8);//PWM at 12kHz
+  ledcSetup(R_PWMCH, 10000, 8);  //PWM at 10kHz
   ledcAttachPin(R_PIN, R_PWMCH);
 
   pinMode(L_PIN, OUTPUT);
-  ledcSetup(L_PWMCH, 10000, 8);//PWM at 10kHz
+  ledcSetup(L_PWMCH, 10000, 8);  //PWM at 10kHz
   ledcAttachPin(L_PIN, L_PWMCH);
 
-  Serial.printf("VU LED at GPIO=%d,%d\r\n",L_PIN,R_PIN);
+  Serial.printf("VU LED at GPIO=%d,%d\r\n", L_PIN, R_PIN);
   Serial.print("Left ");
   printVUmeter(BARLENGTH);  //devide by 1024, reducing max 32768 to 32
   Serial.print(" Right ");
