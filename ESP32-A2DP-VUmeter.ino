@@ -69,7 +69,7 @@ i2s_pin_config_t pin_config = {
 BluetoothA2DPSink a2dp_sink;
 #define VUMETER
 #ifdef VUMETER
-#define INTERVAL 100 //VUmeter update interval
+#define INTERVAL 50 //VUmeter update interval
 
 #define SHIFTSIZE 10
 #define L_PIN 2
@@ -77,12 +77,26 @@ BluetoothA2DPSink a2dp_sink;
 
 #define R_PIN 4
 #define R_PWMCH 0
+#define LED_OFFSET 10
+
+uint32_t counter=0;
+// uint8_t max limitter with input*multiplier+offset
+uint8_t limit(uint8_t input, uint8_t multiplier, uint8_t offset) {
+    uint16_t result = input * multiplier + offset;
+    if (result > UINT8_MAX) {
+        return UINT8_MAX;
+    }
+    return static_cast<uint8_t>(result);
+}
+
 
 bool isFirst = true;
 long elapsed = 0;
+// callbacked every 120msec by from oscilloscope observation
 void data_stream_reader_callback(const uint8_t *data, uint32_t len) {
   //Serial.printf("Data packet received %d\r\n", len);
 //  int16_t minRight = 0;
+  counter++;
   int16_t maxRight = 0;
 //  int16_t minLeft = 0;
   int16_t maxLeft = 0;
@@ -106,20 +120,35 @@ void data_stream_reader_callback(const uint8_t *data, uint32_t len) {
     Serial.println();
     isFirst = false;
   }
-  Serial.print("Left ");
+
   uint8_t val; 
+  uint8_t led_offset;
+  led_offset=(uint8_t)(random(0,LED_OFFSET));
+//  Serial.printf("\r\n%d ",led_offset);
+//  led_offset=(uint8_t)pinkNoise(LED_OFFSET);
+//  Serial.printf("\r\n%d ",led_offset);
+  Serial.printf("\r\n%d %d ",elapsed,len);
+  Serial.print("Left ");
   val= maxLeft >> SHIFTSIZE;
   printVUmeter(val);  //devide by 1024, reducing max 32768 to 32
-  ledcWrite(L_PWMCH, val<<4);  //VU LED at GPIO PIN 
+  val=limit(val,8,led_offset); //Red LED
+  ledcWrite(L_PWMCH, val);  //VU LED at GPIO PIN 
   Serial.print(" Right ");
+ 
   val= maxRight >> SHIFTSIZE;
   printVUmeter(val);  //devide by 1024, reducing max 32768 to 32
-  ledcWrite(R_PWMCH, val<<4);  //VU LED at GPIO PIN 
+  val=limit(val,14,led_offset); //yellow LED
+  ledcWrite(R_PWMCH, val);  //VU LED at GPIO PIN 
+
   Serial.printf("\r");
 
   elapsed = millis();
 
 }
+
+
+
+
 void printVUmeter(uint8_t val) {
 #define BARLENGTH (0x7fff >> SHIFTSIZE)  // should be less than 32
   int i = 0;
@@ -153,7 +182,7 @@ void setup() {
   ledcAttachPin(R_PIN, R_PWMCH);
 
   pinMode(L_PIN, OUTPUT);
-  ledcSetup(L_PWMCH, 12000, 8);//PWM at 12kHz
+  ledcSetup(L_PWMCH, 10000, 8);//PWM at 10kHz
   ledcAttachPin(L_PIN, L_PWMCH);
 
   Serial.printf("VU LED at GPIO=%d,%d\r\n",L_PIN,R_PIN);
