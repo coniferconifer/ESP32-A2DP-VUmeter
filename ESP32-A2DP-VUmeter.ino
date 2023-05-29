@@ -67,6 +67,7 @@ i2s_pin_config_t pin_config = {
   .data_in_num = I2S_PIN_NO_CHANGE
 };
 BluetoothA2DPSink a2dp_sink;
+bool is_active = true;
 #define VUMETER
 #ifdef VUMETER
 #define INTERVAL 50  //VUmeter update interval
@@ -83,7 +84,7 @@ BluetoothA2DPSink a2dp_sink;
 double pinkNoise(double max) {
   static double b0, b1, b2, b3, b4, b5, b6;
   double white = (double)esp_random() / 4294967296.0;
-  float rate=0.5;
+  float rate = 0.5;
   b0 = rate * b0 + white * (1.0 - rate);
   //  b0 = 0.99765 * b0 + white * 0.0990460;
   //  b1 = 0.96300 * b1 + white * 0.2965164;
@@ -148,21 +149,22 @@ void data_stream_reader_callback(const uint8_t *data, uint32_t len) {
   uint8_t led_offset;
   //  led_offset=(uint8_t)(random(0,LED_OFFSET));
   //  Serial.printf("\r\n%d ",led_offset);
-  
-  led_offset = (uint32_t)pinkNoise(LED_OFFSET);
- // Serial.printf("\r\n%d ", led_offset);
 
- // Serial.printf("\r\n%d %d ", elapsed, len);
+  led_offset = (uint32_t)pinkNoise(LED_OFFSET);
+  // Serial.printf("\r\n%d ", led_offset);
+
+  // Serial.printf("\r\n%d %d ", elapsed, len);
+
   Serial.print("Left ");
   val = maxLeft >> SHIFTSIZE;
-  printVUmeter(val);                //devide by 1024, reducing max 32768 to 32
+  printVUmeter(val);  //devide by 1024, reducing max 32768 to 32
 
   val = limit(val, 8, led_offset);  //Red LED
   ledcWrite(L_PWMCH, val);          //VU LED at GPIO PIN
 
   Serial.print(" Right ");
   val = maxRight >> SHIFTSIZE;
-  printVUmeter(val);                 //devide by 1024, reducing max 32768 to 32
+  printVUmeter(val);  //devide by 1024, reducing max 32768 to 32
 
   val = limit(val, 14, led_offset);  //yellow LED
   ledcWrite(R_PWMCH, val);           //VU LED at GPIO PIN
@@ -172,7 +174,24 @@ void data_stream_reader_callback(const uint8_t *data, uint32_t len) {
   elapsed = millis();
 }
 
+void avrc_metadata_callback(uint8_t data1, const uint8_t *data2) {
+  uint32_t value;
+  //Serial.printf("\r\nAVRC metadata rsp: id 0x%x, %s\r\n", data1, data2);
+  switch (data1) {
+    case 0x01:
+      Serial.printf("\r\n %s\r\n",data2);
+      break;
+    case 0x40:
+      char *endptr;
+      value = strtoul((char *)data2, &endptr, 10);
+      Serial.printf("duration(sec):%d\r\n", value/1000);
+      break;
+    
+    default:
 
+      break;
+  }
+}
 
 
 void printVUmeter(uint8_t val) {
@@ -195,9 +214,15 @@ void setup() {
   Serial.begin(115200);
   a2dp_sink.set_pin_config(pin_config);  //change default I2S pin assingment
   a2dp_sink.set_i2s_config(i2s_config);
-  a2dp_sink.start("MyMusic");
+
 #ifdef VUMETER
+
+  a2dp_sink.set_avrc_metadata_callback(avrc_metadata_callback);
+  a2dp_sink.set_avrc_metadata_attribute_mask(ESP_AVRC_MD_ATTR_TITLE | ESP_AVRC_MD_ATTR_PLAYING_TIME);
   a2dp_sink.set_stream_reader(data_stream_reader_callback);
+
+  a2dp_sink.start("MyMusic");
+
   Serial.printf("\r\nVU meter by ESP32-A2DP\r\n");
   Serial.printf("Device: MyMusic\r\n");
   Serial.printf("VU Bar length = %d\r\n", BARLENGTH);
