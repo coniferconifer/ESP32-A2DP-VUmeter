@@ -84,7 +84,7 @@ bool is_active = true;
 double pinkNoise(double max) {
   static double b0, b1, b2, b3, b4, b5, b6;
   double white = (double)esp_random() / 4294967296.0;
-  float rate = 0.5;
+  float rate = 0.8;
   b0 = rate * b0 + white * (1.0 - rate);
   //  b0 = 0.99765 * b0 + white * 0.0990460;
   //  b1 = 0.96300 * b1 + white * 0.2965164;
@@ -116,11 +116,11 @@ uint8_t limit(uint8_t input, uint8_t multiplier, uint8_t offset) {
 
 bool isFirst = true;
 long elapsed = 0;
-// callbacked every 120msec by from oscilloscope observation
+
 void data_stream_reader_callback(const uint8_t *data, uint32_t len) {
   //Serial.printf("Data packet received %d\r\n", len);
   //  int16_t minRight = 0;
-  counter++;
+  // counter++;
   int16_t maxRight = 0;
   //  int16_t minLeft = 0;
   int16_t maxLeft = 0;
