@@ -78,14 +78,25 @@ bool is_active = true;
 
 #define R_PIN 4
 #define R_PWMCH 0
-#define LED_OFFSET 10
+#define LED_OFFSET 30
+esp_a2d_audio_state_t last_state;
+// for esp_a2d_connection_state_t see https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-reference/bluetooth/esp_a2dp.html#_CPPv426esp_a2d_connection_state_t
+void connection_state_changed(esp_a2d_connection_state_t state, void *ptr) {
+  // Serial.printf("connection_state:%s\r\n", a2dp_sink.to_str(state));
+}
+
+// for esp_a2d_audio_state_t see https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-reference/bluetooth/esp_a2dp.html#_CPPv421esp_a2d_audio_state_t
+void audio_state_changed(esp_a2d_audio_state_t state, void *ptr) {
+  //  Serial.printf("audio_state:%s\r\n", a2dp_sink.to_str(state));
+}
 
 // https://www.firstpr.com.au/dsp/pink-noise/#Filtering
+// under R&D
 double pinkNoise(double max) {
   static double b0, b1, b2, b3, b4, b5, b6;
   double white = (double)esp_random() / 4294967296.0;
   float rate = 0.8;
-  b0 = rate * b0 + white * (1.0 - rate);
+  b0 = rate * b0 + white * (1.0 - rate);  //low pass filter
   //  b0 = 0.99765 * b0 + white * 0.0990460;
   //  b1 = 0.96300 * b1 + white * 0.2965164;
   //  b2 = 0.57000 * b2 + white * 1.0526913;
@@ -152,7 +163,6 @@ void data_stream_reader_callback(const uint8_t *data, uint32_t len) {
 
   led_offset = (uint32_t)pinkNoise(LED_OFFSET);
   // Serial.printf("\r\n%d ", led_offset);
-
   // Serial.printf("\r\n%d %d ", elapsed, len);
 
   Serial.print("Left ");
@@ -179,14 +189,14 @@ void avrc_metadata_callback(uint8_t data1, const uint8_t *data2) {
   //Serial.printf("\r\nAVRC metadata rsp: id 0x%x, %s\r\n", data1, data2);
   switch (data1) {
     case 0x01:
-      Serial.printf("\r\n %s\r\n",data2);
+      Serial.printf("\r\n %s\r\n", data2);
       break;
     case 0x40:
       char *endptr;
       value = strtoul((char *)data2, &endptr, 10);
-      Serial.printf("duration(sec):%d\r\n", value/1000);
+      Serial.printf("duration(sec):%d\r\n", value / 1000);
       break;
-    
+
     default:
 
       break;
@@ -216,7 +226,8 @@ void setup() {
   a2dp_sink.set_i2s_config(i2s_config);
 
 #ifdef VUMETER
-
+  a2dp_sink.set_on_connection_state_changed(connection_state_changed);
+  a2dp_sink.set_on_audio_state_changed(audio_state_changed);
   a2dp_sink.set_avrc_metadata_callback(avrc_metadata_callback);
   a2dp_sink.set_avrc_metadata_attribute_mask(ESP_AVRC_MD_ATTR_TITLE | ESP_AVRC_MD_ATTR_PLAYING_TIME);
   a2dp_sink.set_stream_reader(data_stream_reader_callback);
@@ -245,4 +256,26 @@ void setup() {
 #endif
 }
 void loop() {
+  uint8_t val;
+  bool is_started;
+
+  // check state
+  // esp_a2d_connection_state_t state = a2dp_sink.get_connection_state();
+  esp_a2d_audio_state_t state = a2dp_sink.get_audio_state();
+  is_started = state == ESP_A2D_AUDIO_STATE_STARTED;
+  if (last_state != state) {
+    //  Serial.println(is_started ? "started" : "suspended");
+    last_state = state;
+  }
+  if (state == ESP_A2D_AUDIO_STATE_STARTED) {
+    //  Serial.println("playing");
+    delay(1000);  //get audio state slowly
+  } else {
+#define STANDBY_LED
+#ifdef STANDBY_LED  // When audio play is suspended, the LED flickers due to random noise
+    val = (uint8_t)pinkNoise(LED_OFFSET);
+    ledcWrite(R_PWMCH, val);
+    delay(INTERVAL);
+#endif
+  }
 }
