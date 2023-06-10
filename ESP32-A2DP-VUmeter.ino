@@ -95,8 +95,8 @@ void audio_state_changed(esp_a2d_audio_state_t state, void *ptr) {
 double pinkNoise(double max) {
   static double b0, b1, b2, b3, b4, b5, b6;
   double white = (double)esp_random() / 4294967296.0;
-  float rate = 0.8;
-  b0 = rate * b0 + white * (1.0 - rate);  //low pass filter
+  float rate = 0.2;
+  b0 = (1.0-rate) * b0 + white * rate;  //low pass filter
   //  b0 = 0.99765 * b0 + white * 0.0990460;
   //  b1 = 0.96300 * b1 + white * 0.2965164;
   //  b2 = 0.57000 * b2 + white * 1.0526913;
@@ -123,11 +123,18 @@ uint8_t limit(uint8_t input, uint8_t multiplier, uint8_t offset) {
   }
   return static_cast<uint8_t>(result);
 }
+/// callback which is notified on update
+void rssi(esp_bt_gap_cb_param_t::read_rssi_delta_param  &rssiParam){
+  Serial.print("rssi value: ");
+  Serial.println(rssiParam.rssi_delta);
+}
 
 
 bool isFirst = true;
 long elapsed = 0;
-
+long elapsed_offset=0;
+uint8_t val_L=0;
+uint8_t val_R=0;
 void data_stream_reader_callback(const uint8_t *data, uint32_t len) {
   //Serial.printf("Data packet received %d\r\n", len);
   //  int16_t minRight = 0;
@@ -163,22 +170,25 @@ void data_stream_reader_callback(const uint8_t *data, uint32_t len) {
 
   led_offset = (uint32_t)pinkNoise(LED_OFFSET);
   // Serial.printf("\r\n%d ", led_offset);
-  // Serial.printf("\r\n%d %d ", elapsed, len);
+  Serial.printf("\r%08d ", elapsed-elapsed_offset);
 
-  Serial.print("Left ");
+  Serial.print("L ");
   val = maxLeft >> SHIFTSIZE;
-  printVUmeter(val);  //devide by 1024, reducing max 32768 to 32
 
-  val = limit(val, 8, led_offset);  //Red LED
-  ledcWrite(L_PWMCH, val);          //VU LED at GPIO PIN
+  float rate = 0.3; // to simulate 300msec response of VU meter
+  val_L = (uint8_t)((1.0-rate) * (float)val_L + (float)val * rate);
+  printVUmeter(val_L);  //devide by 1024, reducing max 32768 to 32
+  uint8_t led_L;
+  led_L = limit(val_L, 8, led_offset);  //Red LED
+  ledcWrite(L_PWMCH, led_L);          //VU LED at GPIO PIN
 
-  Serial.print(" Right ");
+  Serial.print(" R ");
   val = maxRight >> SHIFTSIZE;
-  printVUmeter(val);  //devide by 1024, reducing max 32768 to 32
-
-  val = limit(val, 14, led_offset);  //yellow LED
-  ledcWrite(R_PWMCH, val);           //VU LED at GPIO PIN
-
+  val_R = (uint8_t)((1.0-rate) * (float)val_R + (float)val * rate);
+  printVUmeter(val_R);  //devide by 1024, reducing max 32768 to 32
+  uint8_t led_R;
+  led_R = limit(val_R, 14, led_offset);  //yellow LED
+  ledcWrite(R_PWMCH, led_R);           //VU LED at GPIO PIN
   Serial.printf("\r");
 
   elapsed = millis();
@@ -190,6 +200,7 @@ void avrc_metadata_callback(uint8_t data1, const uint8_t *data2) {
   switch (data1) {
     case 0x01:
       Serial.printf("\r\n %s\r\n", data2);
+      elapsed_offset=millis();
       break;
     case 0x40:
       char *endptr;
@@ -224,7 +235,8 @@ void setup() {
   Serial.begin(115200);
   a2dp_sink.set_pin_config(pin_config);  //change default I2S pin assingment
   a2dp_sink.set_i2s_config(i2s_config);
-
+  a2dp_sink.set_rssi_active(true);
+  a2dp_sink.set_rssi_callback(rssi);
 #ifdef VUMETER
   a2dp_sink.set_on_connection_state_changed(connection_state_changed);
   a2dp_sink.set_on_audio_state_changed(audio_state_changed);
@@ -247,9 +259,9 @@ void setup() {
   ledcAttachPin(L_PIN, L_PWMCH);
 
   Serial.printf("VU LED at GPIO=%d,%d\r\n", L_PIN, R_PIN);
-  Serial.print("Left ");
+  Serial.print(" L ");
   printVUmeter(BARLENGTH);  //devide by 1024, reducing max 32768 to 32
-  Serial.print(" Right ");
+  Serial.print(" R ");
   printVUmeter(BARLENGTH);  //devide by 1024, reducing max 32768 to 32
   Serial.printf("\r\n");
   Serial.println();
