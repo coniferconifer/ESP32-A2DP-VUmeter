@@ -71,7 +71,7 @@ bool is_active = true;
 #define VUMETER
 #ifdef VUMETER
 #define INTERVAL 50  //VUmeter update interval
-
+#define CALLBACKINDICATOR 15
 #define SHIFTSIZE 10
 #define L_PIN 2
 #define L_PWMCH 1
@@ -136,9 +136,14 @@ long elapsed_offset=0;
 uint8_t val_L=0;
 uint8_t val_R=0;
 void data_stream_reader_callback(const uint8_t *data, uint32_t len) {
-  //Serial.printf("Data packet received %d\r\n", len);
+  //Serial.printf("Data packet received %d\r\n", len); //1024 samples per callback
   //  int16_t minRight = 0;
-  // counter++;
+  counter++;
+  if (counter%2==0){ //GPIO CALLBACKINDICATOR is used to observe how often callback is called
+    digitalWrite( CALLBACKINDICATOR, HIGH ); 
+  } else { //Oscilloscope shows 21.54Hz x 2 x 1024 = 44.1kHz 16bit stereo data
+    digitalWrite( CALLBACKINDICATOR, LOW );
+  }
   int16_t maxRight = 0;
   //  int16_t minLeft = 0;
   int16_t maxLeft = 0;
@@ -170,6 +175,7 @@ void data_stream_reader_callback(const uint8_t *data, uint32_t len) {
 
   led_offset = (uint32_t)pinkNoise(LED_OFFSET);
   // Serial.printf("\r\n%d ", led_offset);
+  // Serial.printf("%d %d\r\n",maxLeft,maxRight);
   Serial.printf("\r%08d ", elapsed-elapsed_offset);
 
   Serial.print("L ");
@@ -258,6 +264,8 @@ void setup() {
   ledcSetup(L_PWMCH, 10000, 8);  //PWM at 10kHz
   ledcAttachPin(L_PIN, L_PWMCH);
 
+  pinMode(CALLBACKINDICATOR,OUTPUT);
+
   Serial.printf("VU LED at GPIO=%d,%d\r\n", L_PIN, R_PIN);
   Serial.print(" L ");
   printVUmeter(BARLENGTH);  //devide by 1024, reducing max 32768 to 32
@@ -287,6 +295,7 @@ void loop() {
 #ifdef STANDBY_LED  // When audio play is suspended, the LED flickers due to random noise
     val = (uint8_t)pinkNoise(LED_OFFSET);
     ledcWrite(R_PWMCH, val);
+    ledcWrite(L_PWMCH, val);
     delay(INTERVAL);
 #endif
   }
