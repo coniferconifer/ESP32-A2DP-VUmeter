@@ -31,7 +31,7 @@ Left ******************............. Right ******************.............
 Left **********..................... Right **********.....................
 
 
-PCM5102A board is connected by
+PCM5102A board is connected by default pin assigment of A2DP library
 GPIO23 -> DIN
 GPIO25 -> LCK
 GPIO26 -> BCK
@@ -47,8 +47,9 @@ digital volume at PC or smartphone (Bluetooth source) is max.
 copyright 2022 by coniferconifer
 LICENSED under apache
 */
+#include "AudioTools.h"
 #include "BluetoothA2DPSink.h"
-
+/*
 i2s_config_t i2s_config = {
   .mode = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_TX),
   .sample_rate = 44100,
@@ -66,7 +67,10 @@ i2s_pin_config_t pin_config = {
   .data_out_num = 23,  //original is 22 , but 22 should be used for I2C
   .data_in_num = I2S_PIN_NO_CHANGE
 };
-BluetoothA2DPSink a2dp_sink;
+*/
+I2SStream i2s;
+BluetoothA2DPSink a2dp_sink(i2s);
+//BluetoothA2DPSink a2dp_sink;
 bool is_active = true;
 #define VUMETER
 #ifdef VUMETER
@@ -96,12 +100,16 @@ double pinkNoise(double max) {
   static double b0, b1, b2, b3, b4, b5, b6;
   double white = (double)esp_random() / 4294967296.0;
   float rate = 0.2;
-  b0 = (1.0-rate) * b0 + white * rate;  //low pass filter
+  b0 = (1.0 - rate) * b0 + white * rate;  //low pass filter
   //  b0 = 0.99765 * b0 + white * 0.0990460;
   //  b1 = 0.96300 * b1 + white * 0.2965164;
   //  b2 = 0.57000 * b2 + white * 1.0526913;
+//#define WHITENOISE // turn on to see how PINK noise is better than White noise
+#ifdef WHITENOISE
+  double pink = white * max;
+#else
   double pink = b0 * max;
-  // Serial.println(pink);
+#endif  // Serial.println(pink);
   /*   b0 = 0.99886 * b0 + white * 0.0555179;
     b1 = 0.99332 * b1 + white * 0.0750759;
     b2 = 0.96900 * b2 + white * 0.1538520;
@@ -124,7 +132,7 @@ uint8_t limit(uint8_t input, uint8_t multiplier, uint8_t offset) {
   return static_cast<uint8_t>(result);
 }
 /// callback which is notified on update
-void rssi(esp_bt_gap_cb_param_t::read_rssi_delta_param  &rssiParam){
+void rssi(esp_bt_gap_cb_param_t::read_rssi_delta_param &rssiParam) {
   Serial.print("rssi value: ");
   Serial.println(rssiParam.rssi_delta);
 }
@@ -132,17 +140,17 @@ void rssi(esp_bt_gap_cb_param_t::read_rssi_delta_param  &rssiParam){
 
 bool isFirst = true;
 long elapsed = 0;
-long elapsed_offset=0;
-uint8_t val_L=0;
-uint8_t val_R=0;
+long elapsed_offset = 0;
+uint8_t val_L = 0;
+uint8_t val_R = 0;
 void data_stream_reader_callback(const uint8_t *data, uint32_t len) {
   //Serial.printf("Data packet received %d\r\n", len); //1024 samples per callback
   //  int16_t minRight = 0;
   counter++;
-  if (counter%2==0){ //GPIO CALLBACKINDICATOR is used to observe how often callback is called
-    digitalWrite( CALLBACKINDICATOR, HIGH ); 
-  } else { //Oscilloscope shows 21.54Hz x 2 x 1024 = 44.1kHz 16bit stereo data
-    digitalWrite( CALLBACKINDICATOR, LOW );
+  if (counter % 2 == 0) {  //GPIO CALLBACKINDICATOR is used to observe how often callback is called
+    digitalWrite(CALLBACKINDICATOR, HIGH);
+  } else {  //Oscilloscope shows 21.54Hz x 2 x 1024 = 44.1kHz 16bit stereo data
+    digitalWrite(CALLBACKINDICATOR, LOW);
   }
   int16_t maxRight = 0;
   //  int16_t minLeft = 0;
@@ -176,25 +184,25 @@ void data_stream_reader_callback(const uint8_t *data, uint32_t len) {
   led_offset = (uint32_t)pinkNoise(LED_OFFSET);
   // Serial.printf("\r\n%d ", led_offset);
   // Serial.printf("%d %d\r\n",maxLeft,maxRight);
-  Serial.printf("\r%08d ", elapsed-elapsed_offset);
+  Serial.printf("\r%08d ", elapsed - elapsed_offset);
 
   Serial.print("L ");
   val = maxLeft >> SHIFTSIZE;
 
-  float rate = 0.3; // to simulate 300msec response of VU meter
-  val_L = (uint8_t)((1.0-rate) * (float)val_L + (float)val * rate);
+  float rate = 0.3;  // to simulate 300msec response of VU meter
+  val_L = (uint8_t)((1.0 - rate) * (float)val_L + (float)val * rate);
   printVUmeter(val_L);  //devide by 1024, reducing max 32768 to 32
   uint8_t led_L;
   led_L = limit(val_L, 8, led_offset);  //Red LED
-  ledcWrite(L_PWMCH, led_L);          //VU LED at GPIO PIN
+  ledcWrite(L_PWMCH, led_L);            //VU LED at GPIO PIN
 
   Serial.print(" R ");
   val = maxRight >> SHIFTSIZE;
-  val_R = (uint8_t)((1.0-rate) * (float)val_R + (float)val * rate);
+  val_R = (uint8_t)((1.0 - rate) * (float)val_R + (float)val * rate);
   printVUmeter(val_R);  //devide by 1024, reducing max 32768 to 32
   uint8_t led_R;
   led_R = limit(val_R, 14, led_offset);  //yellow LED
-  ledcWrite(R_PWMCH, led_R);           //VU LED at GPIO PIN
+  ledcWrite(R_PWMCH, led_R);             //VU LED at GPIO PIN
   Serial.printf("\r");
 
   elapsed = millis();
@@ -206,7 +214,7 @@ void avrc_metadata_callback(uint8_t data1, const uint8_t *data2) {
   switch (data1) {
     case 0x01:
       Serial.printf("\r\n %s\r\n", data2);
-      elapsed_offset=millis();
+      elapsed_offset = millis();
       break;
     case 0x40:
       char *endptr;
@@ -239,32 +247,38 @@ void printVUmeter(uint8_t val) {
 #endif
 void setup() {
   Serial.begin(115200);
-  a2dp_sink.set_pin_config(pin_config);  //change default I2S pin assingment
-  a2dp_sink.set_i2s_config(i2s_config);
-  a2dp_sink.set_rssi_active(true);
-  a2dp_sink.set_rssi_callback(rssi);
+  // a2dp_sink.set_pin_config(pin_config);  //change default I2S pin assingment
+  // a2dp_sink.set_i2s_config(i2s_config);
+  // a2dp_sink.set_rssi_active(true);
+  // a2dp_sink.set_rssi_callback(rssi);
 #ifdef VUMETER
   a2dp_sink.set_on_connection_state_changed(connection_state_changed);
   a2dp_sink.set_on_audio_state_changed(audio_state_changed);
   a2dp_sink.set_avrc_metadata_callback(avrc_metadata_callback);
   a2dp_sink.set_avrc_metadata_attribute_mask(ESP_AVRC_MD_ATTR_TITLE | ESP_AVRC_MD_ATTR_PLAYING_TIME);
   a2dp_sink.set_stream_reader(data_stream_reader_callback);
-
-  a2dp_sink.start("MyMusic");
+  auto cfg = i2s.defaultConfig();
+  cfg.pin_bck = 26;   // default 14
+  cfg.pin_ws = 25;    //default 15
+  cfg.pin_data = 23;  //default 22
+  i2s.begin(cfg);
+  a2dp_sink.start("MyMusic2");
 
   Serial.printf("\r\nVU meter by ESP32-A2DP\r\n");
   Serial.printf("Device: MyMusic\r\n");
   Serial.printf("VU Bar length = %d\r\n", BARLENGTH);
   // setup LED VU meter at GPIO PIN
   pinMode(R_PIN, OUTPUT);
-  ledcSetup(R_PWMCH, 10000, 8);  //PWM at 10kHz
-  ledcAttachPin(R_PIN, R_PWMCH);
-
+  // https://docs.espressif.com/projects/arduino-esp32/en/latest/migration_guides/2.x_to_3.0.html#ledc
+  // lecdSetup and ledcAttachPin is removed from ESP32 3.0
+  //ledcSetup(R_PWMCH, 40000, 8);  //PWM at 40kHz
+  //ledcAttachPin(R_PIN, R_PWMCH);
+  ledcAttach(R_PIN, 40000, 8);  // for ESP32 3.0
   pinMode(L_PIN, OUTPUT);
-  ledcSetup(L_PWMCH, 10000, 8);  //PWM at 10kHz
-  ledcAttachPin(L_PIN, L_PWMCH);
-
-  pinMode(CALLBACKINDICATOR,OUTPUT);
+  //ledcSetup(L_PWMCH, 40000, 8);  //PWM at 40kHz
+  //ledcAttachPin(L_PIN, L_PWMCH);
+  ledcAttach(L_PIN, 40000, 8);  //  for ESP32 3.0
+  pinMode(CALLBACKINDICATOR, OUTPUT);
 
   Serial.printf("VU LED at GPIO=%d,%d\r\n", L_PIN, R_PIN);
   Serial.print(" L ");
