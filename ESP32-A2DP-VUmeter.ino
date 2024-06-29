@@ -194,15 +194,17 @@ void data_stream_reader_callback(const uint8_t *data, uint32_t len) {
   printVUmeter(val_L);  //devide by 1024, reducing max 32768 to 32
   uint8_t led_L;
   led_L = limit(val_L, 8, led_offset);  //Red LED
-  ledcWrite(L_PWMCH, led_L);            //VU LED at GPIO PIN
-
+  //ledcWrite(L_PWMCH, led_L);            //VU LED at GPIO PIN
+  ledcWrite(L_PIN, led_L);            //VU LED at GPIO PIN ESP32 SDK3.0
   Serial.print(" R ");
   val = maxRight >> SHIFTSIZE;
   val_R = (uint8_t)((1.0 - rate) * (float)val_R + (float)val * rate);
   printVUmeter(val_R);  //devide by 1024, reducing max 32768 to 32
   uint8_t led_R;
   led_R = limit(val_R, 14, led_offset);  //yellow LED
-  ledcWrite(R_PWMCH, led_R);             //VU LED at GPIO PIN
+  //ledcWrite(R_PWMCH, led_R);             //VU LED at GPIO PIN
+  ledcWrite(R_PIN, led_R);             //VU LED at GPIO PIN ESP32 SDK3.0
+
   Serial.printf("\r");
 
   elapsed = millis();
@@ -273,11 +275,11 @@ void setup() {
   // lecdSetup and ledcAttachPin is removed from ESP32 3.0
   //ledcSetup(R_PWMCH, 40000, 8);  //PWM at 40kHz
   //ledcAttachPin(R_PIN, R_PWMCH);
-  ledcAttach(R_PIN, 40000, 8);  // for ESP32 3.0
+  Serial.printf("ledcAttach %d\r\n",ledcAttachChannel(R_PIN, 40000, 8, R_PWMCH));  // for ESP32 3.0
   pinMode(L_PIN, OUTPUT);
   //ledcSetup(L_PWMCH, 40000, 8);  //PWM at 40kHz
   //ledcAttachPin(L_PIN, L_PWMCH);
-  ledcAttach(L_PIN, 40000, 8);  //  for ESP32 3.0
+  Serial.printf("ledcAttach %d\r\n",ledcAttachChannel(L_PIN, 40000, 8, L_PWMCH));  //  for ESP32 3.0
   pinMode(CALLBACKINDICATOR, OUTPUT);
 
   Serial.printf("VU LED at GPIO=%d,%d\r\n", L_PIN, R_PIN);
@@ -308,8 +310,11 @@ void loop() {
 #define STANDBY_LED
 #ifdef STANDBY_LED  // When audio play is suspended, the LED flickers due to random noise
     val = (uint8_t)pinkNoise(LED_OFFSET);
-    ledcWrite(R_PWMCH, val);
-    ledcWrite(L_PWMCH, val);
+    //ledcWrite(R_PWMCH, val);
+    //ledcWrite(L_PWMCH, val);
+    //
+    ledcWrite(R_PIN, val); //ESP32 SDK 3.0
+    ledcWrite(L_PIN, val);
     delay(INTERVAL);
 #endif
   }
