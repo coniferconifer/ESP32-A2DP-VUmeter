@@ -68,8 +68,18 @@ i2s_pin_config_t pin_config = {
   .data_in_num = I2S_PIN_NO_CHANGE
 };
 */
+AudioInfo info(44100, 2, 16);
 I2SStream i2s;
 BluetoothA2DPSink a2dp_sink(i2s);
+OutputMixer<int16_t> mixer(i2s, 2);  
+const int buffer_size = 16 * 20;  // split up the output into small slices
+uint8_t surround_buffer[buffer_size];
+
+#define PASSTHROUGH 0
+#define SPEAKERMATRIX 1
+#define MX15MODE 2
+uint8_t mode =  PASSTHROUGH ; //MX15MODE;  // 0.. passthrough , 1..speaker matrix , 2..MX-15 mode speaker matrix
+
 //BluetoothA2DPSink a2dp_sink;
 bool is_active = true;
 #define VUMETER
@@ -144,6 +154,51 @@ long elapsed_offset = 0;
 uint8_t val_L = 0;
 uint8_t val_R = 0;
 void data_stream_reader_callback(const uint8_t *data, uint32_t len) {
+
+ // To keep the mixing buffer small, we split up the output into small slices
+  const int sliceSize = buffer_size;
+  int16_t RchData, LchData;
+  //Serial.printf("length=%d\r\n", length);
+  for (int j = 0; j < len; j += sliceSize) {
+    // Write j'th a2dp slice
+    int remaining = min(sliceSize, static_cast<int>(len - j));
+    //   Serial.printf("remaining=%d j=%d\r\n",remaining,j);
+
+    for (int i = j; i < (j + remaining); i = i + 4) {
+      int16_t leftData = (int16_t)(data[i] | (data[i + 1] << 8));
+      int16_t rightData = (int16_t)(data[i + 2] | (data[i + 3] << 8));
+      //#define PASSTHROUGH
+      switch (mode) {
+        case PASSTHROUGH:
+          LchData = leftData;
+          RchData = rightData;
+          break;
+        case SPEAKERMATRIX:  // output surround soun for rear speaker : R-L, L-R
+          LchData = leftData - rightData;
+          RchData = rightData - leftData;
+          break;
+        default:  //MX15MODE
+          // Tetsuo Nagaoka's MX-15 matrix speaker mode by default
+          LchData = (leftData - rightData / 2) ;
+          RchData = (rightData - leftData / 2) ;
+          // you can get R+C for center speaker by analog resister mixer from Rch and Lch
+          // (L/2-R/4) + (R/2-L/4) => (R+L)/4
+          // two 2kOhm and one 100kOhm are enough for mixer
+          break;
+      }
+      surround_buffer[i - j] = (uint8_t)(LchData & 0xff);
+      surround_buffer[i - j + 1] = (uint8_t)(LchData >> 8);
+      surround_buffer[i - j + 2] = (uint8_t)(RchData & 0xff);
+      surround_buffer[i - j + 3] = (uint8_t)(RchData >> 8);
+
+      // Serial.printf("%d %d  i/4-j/4 %d\r\n", leftData,rightData,i/4-j/4);
+    }
+
+    mixer.write(surround_buffer, remaining);
+    mixer.write(surround_buffer, remaining);
+  }
+
+
   //Serial.printf("Data packet received %d\r\n", len); //1024 samples per callback
   //  int16_t minRight = 0;
   counter++;
@@ -195,7 +250,7 @@ void data_stream_reader_callback(const uint8_t *data, uint32_t len) {
   uint8_t led_L;
   led_L = limit(val_L, 8, led_offset);  //Red LED
   //ledcWrite(L_PWMCH, led_L);            //VU LED at GPIO PIN
-  ledcWrite(L_PIN, led_L);            //VU LED at GPIO PIN ESP32 SDK3.0
+  ledcWrite(L_PIN, led_L);  //VU LED at GPIO PIN ESP32 SDK3.0
   Serial.print(" R ");
   val = maxRight >> SHIFTSIZE;
   val_R = (uint8_t)((1.0 - rate) * (float)val_R + (float)val * rate);
@@ -203,9 +258,10 @@ void data_stream_reader_callback(const uint8_t *data, uint32_t len) {
   uint8_t led_R;
   led_R = limit(val_R, 14, led_offset);  //yellow LED
   //ledcWrite(R_PWMCH, led_R);             //VU LED at GPIO PIN
-  ledcWrite(R_PIN, led_R);             //VU LED at GPIO PIN ESP32 SDK3.0
+  ledcWrite(R_PIN, led_R);  //VU LED at GPIO PIN ESP32 SDK3.0
 
   Serial.printf("\r");
+
 
   elapsed = millis();
 }
@@ -249,6 +305,25 @@ void printVUmeter(uint8_t val) {
 #endif
 void setup() {
   Serial.begin(115200);
+ // AudioLogger::instance().begin(Serial, AudioLogger::Warning);
+  Serial.printf("ESP32 A2DP surround processor by speaker matrix emulation\r\n");
+  switch (mode){
+    case PASSTHROUGH:
+      Serial.printf("pass through mode\r\n");
+      break;
+    case SPEAKERMATRIX:
+      Serial.printf("L-R,R-L Speaker Matrix mode\r\n");
+      break;
+    case MX15MODE:
+      Serial.printf("MX-15 (2L-R,2R-L) mode\r\n");
+      break;
+    default:
+      break;
+  }
+  // setup Output mixer with min necessary memory
+  mixer.begin(buffer_size);
+
+
   // a2dp_sink.set_pin_config(pin_config);  //change default I2S pin assingment
   // a2dp_sink.set_i2s_config(i2s_config);
   // a2dp_sink.set_rssi_active(true);
@@ -258,7 +333,7 @@ void setup() {
   a2dp_sink.set_on_audio_state_changed(audio_state_changed);
   a2dp_sink.set_avrc_metadata_callback(avrc_metadata_callback);
   a2dp_sink.set_avrc_metadata_attribute_mask(ESP_AVRC_MD_ATTR_TITLE | ESP_AVRC_MD_ATTR_PLAYING_TIME);
-  a2dp_sink.set_stream_reader(data_stream_reader_callback);
+  a2dp_sink.set_stream_reader(data_stream_reader_callback,false);
   auto cfg = i2s.defaultConfig();
   cfg.pin_bck = 26;   // default 14
   cfg.pin_ws = 25;    //default 15
@@ -275,11 +350,11 @@ void setup() {
   // lecdSetup and ledcAttachPin is removed from ESP32 3.0
   //ledcSetup(R_PWMCH, 40000, 8);  //PWM at 40kHz
   //ledcAttachPin(R_PIN, R_PWMCH);
-  Serial.printf("ledcAttach %d\r\n",ledcAttachChannel(R_PIN, 40000, 8, R_PWMCH));  // for ESP32 3.0
+  Serial.printf("ledcAttach %d\r\n", ledcAttachChannel(R_PIN, 40000, 8, R_PWMCH));  // for ESP32 3.0
   pinMode(L_PIN, OUTPUT);
   //ledcSetup(L_PWMCH, 40000, 8);  //PWM at 40kHz
   //ledcAttachPin(L_PIN, L_PWMCH);
-  Serial.printf("ledcAttach %d\r\n",ledcAttachChannel(L_PIN, 40000, 8, L_PWMCH));  //  for ESP32 3.0
+  Serial.printf("ledcAttach %d\r\n", ledcAttachChannel(L_PIN, 40000, 8, L_PWMCH));  //  for ESP32 3.0
   pinMode(CALLBACKINDICATOR, OUTPUT);
 
   Serial.printf("VU LED at GPIO=%d,%d\r\n", L_PIN, R_PIN);
@@ -313,7 +388,7 @@ void loop() {
     //ledcWrite(R_PWMCH, val);
     //ledcWrite(L_PWMCH, val);
     //
-    ledcWrite(R_PIN, val); //ESP32 SDK 3.0
+    ledcWrite(R_PIN, val);  //ESP32 SDK 3.0
     ledcWrite(L_PIN, val);
     delay(INTERVAL);
 #endif
